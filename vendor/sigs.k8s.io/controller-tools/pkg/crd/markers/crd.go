@@ -45,6 +45,12 @@ var CRDMarkers = []*definitionWithHelp{
 
 	must(markers.MakeDefinition("kubebuilder:skipversion", markers.DescribesType, SkipVersion{})).
 		WithHelp(SkipVersion{}.Help()),
+
+	must(markers.MakeDefinition("kubebuilder:unservedversion", markers.DescribesType, UnservedVersion{})).
+		WithHelp(UnservedVersion{}.Help()),
+
+	must(markers.MakeDefinition("kubebuilder:deprecatedversion", markers.DescribesType, DeprecatedVersion{})).
+		WithHelp(DeprecatedVersion{}.Help()),
 }
 
 // TODO: categories and singular used to be annotations types
@@ -277,6 +283,9 @@ func (s Resource) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version s
 	if s.Path != "" {
 		crd.Names.Plural = s.Path
 	}
+	if s.Singular != "" {
+		crd.Names.Singular = s.Singular
+	}
 	crd.Names.ShortNames = s.ShortName
 	crd.Names.Categories = s.Categories
 
@@ -290,4 +299,49 @@ func (s Resource) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version s
 	return nil
 }
 
+// +controllertools:marker:generateHelp:category=CRD
+
+// UnservedVersion does not serve this version.
+//
+// This is useful if you need to drop support for a version in favor of a newer version.
+type UnservedVersion struct{}
+
+func (s UnservedVersion) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
+		}
+		ver.Served = false
+		break
+	}
+	return nil
+}
+
 // NB(directxman12): singular was historically distinct, so we keep it here for backwards compat
+
+// +controllertools:marker:generateHelp:category=CRD
+
+// DeprecatedVersion marks this version as deprecated.
+type DeprecatedVersion struct {
+	// Warning message to be shown on the deprecated version
+	Warning *string `marker:",optional"`
+}
+
+func (s DeprecatedVersion) ApplyToCRD(crd *apiext.CustomResourceDefinitionSpec, version string) error {
+	if version == "" {
+		// single-version, do nothing
+		return nil
+	}
+	// multi-version
+	for i := range crd.Versions {
+		ver := &crd.Versions[i]
+		if ver.Name != version {
+			continue
+		}
+		ver.Deprecated = true
+		ver.DeprecationWarning = s.Warning
+		break
+	}
+	return nil
+}
